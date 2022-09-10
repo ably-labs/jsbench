@@ -6,13 +6,19 @@ import (
 	"github.com/nats-io/nats.go"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 )
 
 var (
-	natsAddress string
-	replicas    int
+	natsAddress  string
+	replicas     int
+	streamPrefix string
 )
+
+func streamName(i int) string {
+	return streamPrefix + strconv.Itoa(i)
+}
 
 func subscriber(ctx context.Context, done chan struct{}, subject string) {
 	nc, err := nats.Connect(natsAddress, nats.Name("sub"))
@@ -28,7 +34,7 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 		var tm time.Time
 		err := tm.UnmarshalBinary(msg.Data)
 		if err != nil {
-			log.Fatalln("Could no deseialize message", err)
+			log.Fatalln("Could no unmarshal message", err)
 		}
 		log.Println("latency", time.Since(tm))
 		close(done)
@@ -42,7 +48,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var streamPrefix string
 	var subject string
 	flag.StringVar(&natsAddress, "s", nats.DefaultURL, "nats server address")
 	flag.StringVar(&subject, "subject", "testsubject", "subject to publish to")
@@ -52,21 +57,39 @@ func main() {
 	delay := flag.Duration("delay", time.Second, "delay between stream creations")
 	flag.Parse()
 
-	log.SetFlags(log.Lshortfile)
 	ticker := time.NewTicker(*delay)
 	i := 0
+	wg := new(sync.WaitGroup)
+	wg.Add(*numStreams)
 	for range ticker.C {
 		if i == *numStreams {
 			break
 		}
 
-		go do(ctx, streamPrefix+strconv.Itoa(i))
+		go do(ctx, wg, streamName(i))
 		i++
 	}
 
+	deleteAllStreams(*numStreams)
 }
 
-func do(ctx context.Context, streamName string) {
+func deleteAllStreams(n int) {
+	nc, err := nats.Connect(natsAddress, nats.Name("deleter"))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer nc.Close()
+	js, err := nc.JetStream()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	for i := 0; i < n; i++ {
+		js.DeleteStream(streamName(n))
+	}
+}
+
+func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
+	defer wg.Done()
 	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName))
 	if err != nil {
 		log.Fatalln(err)
@@ -86,7 +109,6 @@ func do(ctx context.Context, streamName string) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	defer js.DeleteStream(streamName)
 
 	done := make(chan struct{})
 	go subscriber(ctx, done, streamName)
@@ -96,7 +118,6 @@ func do(ctx context.Context, streamName string) {
 	}
 
 	<-done
-	<-ctx.Done()
 }
 
 func sendMsg(js nats.JetStreamContext, subject string) error {
