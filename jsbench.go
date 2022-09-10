@@ -36,7 +36,7 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 		if err != nil {
 			log.Fatalln("Could no unmarshal message", err)
 		}
-		log.Println("latency", time.Since(tm))
+		log.Println(subject, "latency", time.Since(tm))
 		close(done)
 	})
 	defer sub.Unsubscribe()
@@ -69,6 +69,7 @@ func main() {
 		go do(ctx, wg, streamName(i))
 		i++
 	}
+	wg.Wait()
 
 	deleteAllStreams(*numStreams)
 }
