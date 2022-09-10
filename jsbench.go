@@ -1,18 +1,20 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"github.com/nats-io/nats.go"
 	"log"
+	"strconv"
 	"time"
 )
 
 var (
 	natsAddress string
-	subject     string
+	replicas    int
 )
 
-func subscriber(done chan struct{}) {
+func subscriber(ctx context.Context, done chan struct{}, subject string) {
 	nc, err := nats.Connect(natsAddress, nats.Name("sub"))
 	if err != nil {
 		log.Fatalln(err)
@@ -33,18 +35,39 @@ func subscriber(done chan struct{}) {
 	})
 	defer sub.Unsubscribe()
 	<-done
+	<-ctx.Done()
 }
 
 func main() {
-	var streamName string
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var streamPrefix string
+	var subject string
 	flag.StringVar(&natsAddress, "s", nats.DefaultURL, "nats server address")
 	flag.StringVar(&subject, "subject", "testsubject", "subject to publish to")
-	flag.StringVar(&streamName, "stream", "teststream", "subject to publish to")
-	replicas := flag.Int("replicas", 1, "replication factor")
+	flag.StringVar(&streamPrefix, "stream", "teststream", "subject to publish to")
+	flag.IntVar(&replicas, "replicas", 3, "replication factor")
+	numStreams := flag.Int("n", 1, "number of streams")
+	delay := flag.Duration("delay", time.Second, "delay between stream creations")
 	flag.Parse()
 
 	log.SetFlags(log.Lshortfile)
-	nc, err := nats.Connect(natsAddress, nats.Name("pub"))
+	ticker := time.NewTicker(*delay)
+	i := 0
+	for range ticker.C {
+		if i == *numStreams {
+			break
+		}
+
+		go do(ctx, streamPrefix+strconv.Itoa(i))
+		i++
+	}
+
+}
+
+func do(ctx context.Context, streamName string) {
+	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -56,8 +79,8 @@ func main() {
 	js.DeleteStream(streamName)
 	_, err = js.AddStream(&nats.StreamConfig{
 		Name:     streamName,
-		Subjects: []string{subject},
-		Replicas: *replicas,
+		Subjects: []string{streamName},
+		Replicas: replicas,
 		Storage:  nats.FileStorage,
 	})
 	if err != nil {
@@ -66,16 +89,17 @@ func main() {
 	defer js.DeleteStream(streamName)
 
 	done := make(chan struct{})
-	go subscriber(done)
-	err = sendMsg(js)
+	go subscriber(ctx, done, streamName)
+	err = sendMsg(js, streamName)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	<-done
+	<-ctx.Done()
 }
 
-func sendMsg(js nats.JetStreamContext) error {
+func sendMsg(js nats.JetStreamContext, subject string) error {
 	now := time.Now()
 	msg, _ := now.MarshalBinary()
 	_, err := js.Publish(subject, msg)
