@@ -13,7 +13,7 @@ var (
 )
 
 func subscriber(done chan struct{}) {
-	nc, err := nats.Connect(nats.DefaultURL, nats.Name("sub"))
+	nc, err := nats.Connect(natsAddress, nats.Name("sub"))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -44,7 +44,7 @@ func main() {
 	flag.Parse()
 
 	log.SetFlags(log.Lshortfile)
-	nc, err := nats.Connect(nats.DefaultURL, nats.Name("pub"))
+	nc, err := nats.Connect(natsAddress, nats.Name("pub"))
 	if err != nil {
 		log.Fatalln(err)
 	}
