@@ -41,7 +41,9 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 			log.Fatalln("Could no unmarshal message", err)
 		}
 		latency := time.Since(tm)
-		log.Println(subject, "latency", latency)
+		if !quiet {
+			log.Println(subject, "latency", latency)
+		}
 		hist.Add(latency)
 		close(done)
 	})
