@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/nats-io/nats.go"
+	"jseg/histogram"
 	"log"
 	"strconv"
 	"sync"
@@ -11,9 +13,11 @@ import (
 )
 
 var (
+	hist         = histogram.New()
 	natsAddress  string
 	replicas     int
 	streamPrefix string
+	quiet        bool
 )
 
 func streamName(i int) string {
@@ -36,7 +40,9 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 		if err != nil {
 			log.Fatalln("Could no unmarshal message", err)
 		}
-		log.Println(subject, "latency", time.Since(tm))
+		latency := time.Since(tm)
+		log.Println(subject, "latency", latency)
+		hist.Add(latency)
 		close(done)
 	})
 	defer sub.Unsubscribe()
@@ -53,6 +59,7 @@ func main() {
 	flag.StringVar(&subject, "subject", "testsubject", "subject to publish to")
 	flag.StringVar(&streamPrefix, "stream", "teststream", "subject to publish to")
 	flag.IntVar(&replicas, "replicas", 3, "replication factor")
+	flag.BoolVar(&quiet, "q", false, "supress logging of individual latencies")
 	numStreams := flag.Int("n", 1, "number of streams")
 	delay := flag.Duration("delay", time.Second, "delay between stream creations")
 	flag.Parse()
@@ -70,7 +77,7 @@ func main() {
 		i++
 	}
 	wg.Wait()
-
+	fmt.Println(hist)
 	deleteAllStreams(*numStreams)
 }
 
