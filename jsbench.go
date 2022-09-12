@@ -84,8 +84,6 @@ func deleteStreams() {
 
 func main() {
 	log.SetFlags(log.Lshortfile)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	var subject string
 	flag.StringVar(&natsAddress, "s", nats.DefaultURL, "nats server address")
@@ -95,7 +93,11 @@ func main() {
 	flag.BoolVar(&quiet, "q", false, "supress logging of individual latencies")
 	numStreams := flag.Int("n", 1, "number of streams")
 	delay := flag.Duration("delay", time.Second, "delay between stream creations")
+	timeout := flag.Duration("timeout", time.Minute, "timeout for whole run")
 	flag.Parse()
+
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
 
 	deleteStreams()
 
@@ -132,6 +134,10 @@ func deleteAllStreams(n int) {
 }
 
 func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
+	if ctx.Err() != nil {
+		log.Println(ctx.Err())
+		return
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	defer wg.Done()
