@@ -8,6 +8,7 @@ import (
 	"jseg/histogram"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,6 +53,30 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 	<-ctx.Done()
 }
 
+func deleteStreams() {
+	nc, err := nats.Connect(natsAddress, nats.Name("deleter"))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer nc.Close()
+	js, err := nc.JetStream()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	ch := js.StreamNames()
+	for name := range ch {
+		if strings.HasPrefix(name, streamPrefix) {
+			if !quiet {
+				log.Println("deleting stale stream", name)
+			}
+			err := js.DeleteStream(name)
+			if err != nil {
+				log.Println("deleting stream", name, err)
+			}
+		}
+	}
+}
+
 func main() {
 	log.SetFlags(log.Lshortfile)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,6 +91,8 @@ func main() {
 	numStreams := flag.Int("n", 1, "number of streams")
 	delay := flag.Duration("delay", time.Second, "delay between stream creations")
 	flag.Parse()
+
+	deleteStreams()
 
 	ticker := time.NewTicker(*delay)
 	i := 0
