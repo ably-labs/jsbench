@@ -53,6 +53,7 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 }
 
 func main() {
+	log.SetFlags(log.Lshortfile)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -117,7 +118,8 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 		Storage:  nats.FileStorage,
 	})
 	if err != nil {
-		log.Fatalln(err)
+		log.Println("failed to create stream", err)
+		return
 	}
 
 	done := make(chan struct{})
