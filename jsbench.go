@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,6 +20,8 @@ var (
 	replicas     int
 	streamPrefix string
 	quiet        bool
+	nClients     int
+	clients      []nats.JetStreamContext
 )
 
 func streamName(i int) string {
@@ -26,15 +29,7 @@ func streamName(i int) string {
 }
 
 func subscriber(ctx context.Context, done chan struct{}, subject string) {
-	nc, err := nats.Connect(natsAddress, nats.Name("sub"), nats.Timeout(2*time.Second))
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer nc.Close()
-	js, err := nc.JetStream()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	js := getClient()
 	sub, err := js.Subscribe(subject, func(msg *nats.Msg) {
 		var tm time.Time
 		err := tm.UnmarshalBinary(msg.Data)
@@ -48,6 +43,10 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 		hist.Add(latency)
 		close(done)
 	})
+	if err != nil {
+		log.Println("could not subscrive to", subject, err)
+		return
+	}
 	defer sub.Unsubscribe()
 	select {
 	case <-done:
@@ -59,15 +58,7 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 }
 
 func deleteStreams() {
-	nc, err := nats.Connect(natsAddress, nats.Name("deleter"))
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer nc.Close()
-	js, err := nc.JetStream()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	js := getClient()
 	ch := js.StreamNames()
 	for name := range ch {
 		if strings.HasPrefix(name, streamPrefix) {
@@ -82,6 +73,28 @@ func deleteStreams() {
 	}
 }
 
+func openClients() {
+	clients = make([]nats.JetStreamContext, nClients)
+	for i := 0; i < nClients; i++ {
+		nc, err := nats.Connect(natsAddress, nats.Name("deleter"))
+		if err != nil {
+			log.Fatalln(err)
+		}
+		js, err := nc.JetStream()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		clients[i] = js
+	}
+}
+
+var clientIDx int64
+
+func getClient() nats.JetStreamContext {
+	idx := atomic.AddInt64(&clientIDx, 1)
+	return clients[int(idx)%len(clients)]
+}
+
 func main() {
 	log.SetFlags(log.Lshortfile)
 
@@ -90,6 +103,7 @@ func main() {
 	flag.StringVar(&subject, "subject", "testsubject", "subject to publish to")
 	flag.StringVar(&streamPrefix, "stream", "teststream", "subject to publish to")
 	flag.IntVar(&replicas, "replicas", 3, "replication factor")
+	flag.IntVar(&nClients, "nclients", 1, "number of clients to open")
 	flag.BoolVar(&quiet, "q", false, "supress logging of individual latencies")
 	numStreams := flag.Int("n", 1, "number of streams")
 	delay := flag.Duration("delay", time.Second, "delay between stream creations")
@@ -100,6 +114,8 @@ func main() {
 	defer func() {
 		cancel()
 	}()
+
+	openClients()
 
 	deleteStreams()
 
@@ -120,15 +136,7 @@ func main() {
 }
 
 func deleteAllStreams(n int) {
-	nc, err := nats.Connect(natsAddress, nats.Name("deleter"))
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer nc.Close()
-	js, err := nc.JetStream()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	js := getClient()
 	for i := 0; i < n; i++ {
 		js.DeleteStream(streamName(n))
 	}
@@ -145,17 +153,8 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 	}()
 
 	defer wg.Done()
-	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName), nats.Timeout(10*time.Second))
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer nc.Close()
-	js, err := nc.JetStream()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	js.DeleteStream(streamName)
-	_, err = js.AddStream(&nats.StreamConfig{
+	js := getClient()
+	_, err := js.AddStream(&nats.StreamConfig{
 		Name:     streamName,
 		Subjects: []string{streamName},
 		Replicas: replicas,
