@@ -51,8 +51,8 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 	defer sub.Unsubscribe()
 	select {
 	case <-done:
-	case <-ctx.Done():
-		log.Println("Waiting for message from subject", subject, ctx.Err())
+	case <-time.After(10 * time.Second):
+		log.Println("10s timeout waiting for read from", subject)
 		return
 	}
 	<-ctx.Done()
@@ -97,7 +97,9 @@ func main() {
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-	defer cancel()
+	defer func() {
+		cancel()
+	}()
 
 	deleteStreams()
 
@@ -138,7 +140,10 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	defer func() {
+		cancel()
+	}()
+
 	defer wg.Done()
 	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName), nats.Timeout(10*time.Second))
 	if err != nil {
