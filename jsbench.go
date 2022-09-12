@@ -26,7 +26,7 @@ func streamName(i int) string {
 }
 
 func subscriber(ctx context.Context, done chan struct{}, subject string) {
-	nc, err := nats.Connect(natsAddress, nats.Name("sub"))
+	nc, err := nats.Connect(natsAddress, nats.Name("sub"), nats.Timeout(2*time.Second))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -49,7 +49,12 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 		close(done)
 	})
 	defer sub.Unsubscribe()
-	<-done
+	select {
+	case <-done:
+	case <-ctx.Done():
+		log.Println("Waiting for message", ctx.Err())
+		return
+	}
 	<-ctx.Done()
 }
 
@@ -127,10 +132,10 @@ func deleteAllStreams(n int) {
 }
 
 func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	defer wg.Done()
-	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName))
+	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName), nats.Timeout(10*time.Second))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -145,7 +150,7 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 		Subjects: []string{streamName},
 		Replicas: replicas,
 		Storage:  nats.FileStorage,
-	})
+	}, nats.Context(ctx))
 	if err != nil {
 		log.Println("failed to create stream", err)
 		return
