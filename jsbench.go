@@ -154,6 +154,7 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 
 	defer wg.Done()
 	js := getClient()
+	js.PurgeStream(streamName)
 	_, err := js.AddStream(&nats.StreamConfig{
 		Name:     streamName,
 		Subjects: []string{streamName},
