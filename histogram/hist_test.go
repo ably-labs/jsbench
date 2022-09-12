@@ -13,6 +13,7 @@ func TestTable_Add(t *testing.T) {
 	h.Add(4 * time.Second)
 	expected := `1ms-2ms: 2
 4s-5s: 1
+
 Median: 1ms-2ms
 90%: 4s-5s
 99%: 4s-5s

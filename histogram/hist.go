@@ -49,6 +49,7 @@ func (t Table) String() string {
 		}
 		fmt.Fprintf(w, "%s-%s: %d\n", e.min, e.max, e.n)
 	}
+	fmt.Fprintln(w)
 	t.printPercentile(w, "Median", 50)
 	t.printPercentile(w, "90%", 90)
 	t.printPercentile(w, "99%", 99)
