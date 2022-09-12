@@ -52,7 +52,7 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 	select {
 	case <-done:
 	case <-ctx.Done():
-		log.Println("Waiting for message", ctx.Err())
+		log.Println("Waiting for message from subject", subject, ctx.Err())
 		return
 	}
 	<-ctx.Done()
@@ -104,12 +104,11 @@ func main() {
 	ticker := time.NewTicker(*delay)
 	i := 0
 	wg := new(sync.WaitGroup)
-	wg.Add(*numStreams)
 	for range ticker.C {
-		if i == *numStreams {
+		if i == *numStreams || ctx.Err() != nil {
 			break
 		}
-
+		wg.Add(1)
 		go do(ctx, wg, streamName(i))
 		i++
 	}
