@@ -127,6 +127,8 @@ func deleteAllStreams(n int) {
 }
 
 func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	defer wg.Done()
 	nc, err := nats.Connect(natsAddress, nats.Name("pub_"+streamName))
 	if err != nil {
@@ -151,7 +153,7 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 
 	done := make(chan struct{})
 	go subscriber(ctx, done, streamName)
-	err = sendMsg(js, streamName)
+	err = sendMsg(ctx, js, streamName)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -159,9 +161,9 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 	<-done
 }
 
-func sendMsg(js nats.JetStreamContext, subject string) error {
+func sendMsg(ctx context.Context, js nats.JetStreamContext, subject string) error {
 	now := time.Now()
 	msg, _ := now.MarshalBinary()
-	_, err := js.Publish(subject, msg)
+	_, err := js.Publish(subject, msg, nats.Context(ctx))
 	return err
 }
