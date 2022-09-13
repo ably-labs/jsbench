@@ -1,5 +1,9 @@
 package histogram
 
+// histogram is a semi logarithmic histogram which gives 1 digit of precison.
+// Buckets start 1us, 2us, 3us, ... 20us, 30us
+// It can record times up to 2h and takes under 10ns to record a value.
+
 import (
 	"fmt"
 	"io"
@@ -20,7 +24,7 @@ type Table []entry
 
 func New() Table {
 	var t Table
-	for delta := 1 * time.Microsecond; delta < 10*time.Second; delta *= 10 {
+	for delta := 100 * time.Microsecond; delta < 10000*time.Second; delta *= 10 {
 		for i := time.Duration(1); i < 10; i++ {
 			t = append(t, entry{
 				min: i * delta,
@@ -33,11 +37,12 @@ func New() Table {
 
 func (t Table) Add(d time.Duration) {
 	for i, e := range t {
-		if e.min <= d && d < e.max {
+		if d < e.max {
 			atomic.AddInt64(&(t[i].n), 1)
 			return
 		}
 	}
+	// We have a duration longer than 2h 46mins. Just ignore it.
 	log.Println("latency bigger than max in table", d)
 }
 

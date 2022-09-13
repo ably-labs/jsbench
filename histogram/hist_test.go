@@ -51,3 +51,19 @@ func TestTable_Percentile(t *testing.T) {
 		})
 	}
 }
+
+func TestNew(t *testing.T) {
+	h := New()
+	assert.Equal(t, 72, len(h))
+	t.Logf("%s", h[len(h)-1].max)
+}
+
+func BenchmarkHist(b *testing.B) {
+	h := New()
+	for n := 0; n < b.N; n++ {
+		h.Add(3456 * time.Microsecond)
+	}
+	if h.Count() != b.N {
+		b.Fail()
+	}
+}
