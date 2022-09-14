@@ -28,7 +28,7 @@ func streamName(i int) string {
 	return streamPrefix + strconv.Itoa(i)
 }
 
-func subscriber(ctx context.Context, done chan struct{}, subject string) {
+func subscriber(ctx context.Context, subscribed, done chan struct{}, subject string) {
 	js := getClient()
 	sub, err := js.Subscribe(subject, func(msg *nats.Msg) {
 		var tm time.Time
@@ -42,11 +42,12 @@ func subscriber(ctx context.Context, done chan struct{}, subject string) {
 		}
 		hist.Add(latency)
 		close(done)
-	})
+	}, nats.DeliverNew())
 	if err != nil {
 		log.Println("could not subscrive to", subject, err)
 		return
 	}
+	close(subscribed)
 	defer sub.Unsubscribe()
 	select {
 	case <-done:
@@ -166,8 +167,9 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 		return
 	}
 
+	subscribed := make(chan struct{})
 	done := make(chan struct{})
-	go subscriber(ctx, done, streamName)
+	go subscriber(ctx, subscribed, done, streamName)
 	err = sendMsg(ctx, js, streamName)
 	if err != nil {
 		log.Fatalln(err)
