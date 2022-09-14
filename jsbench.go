@@ -170,6 +170,7 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 	subscribed := make(chan struct{})
 	done := make(chan struct{})
 	go subscriber(ctx, subscribed, done, streamName)
+	<-subscribed
 	err = sendMsg(ctx, js, streamName)
 	if err != nil {
 		log.Fatalln(err)
