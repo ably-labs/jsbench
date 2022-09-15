@@ -20,6 +20,7 @@ var (
 	replicas     int
 	streamPrefix string
 	quiet        bool
+	waitForSub   bool
 	nClients     int
 	clients      []nats.JetStreamContext
 )
@@ -106,6 +107,7 @@ func main() {
 	flag.IntVar(&replicas, "replicas", 3, "replication factor")
 	flag.IntVar(&nClients, "nclients", 1, "number of clients to open")
 	flag.BoolVar(&quiet, "q", false, "supress logging of individual latencies")
+	flag.BoolVar(&waitForSub, "w", false, "wait for subscibe to be initiated before sending messages")
 	numStreams := flag.Int("n", 1, "number of streams")
 	delay := flag.Duration("delay", time.Second, "delay between stream creations")
 	timeout := flag.Duration("timeout", time.Minute, "timeout for whole run")
@@ -171,7 +173,9 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 	done := make(chan struct{})
 	subStart := time.Now()
 	go subscriber(ctx, subscribed, done, streamName)
-	<-subscribed
+	if waitForSub {
+		<-subscribed
+	}
 	if !quiet {
 		log.Println("waited for subscription to start", time.Since(subStart))
 	}
