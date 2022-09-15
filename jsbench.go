@@ -175,9 +175,10 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 	go subscriber(ctx, subscribed, done, streamName)
 	if waitForSub {
 		<-subscribed
-	}
-	if !quiet {
-		log.Println("waited for subscription to start", time.Since(subStart))
+		if !quiet {
+			log.Println("waited for subscription to start", time.Since(subStart))
+		}
+
 	}
 	err = sendMsg(ctx, js, streamName)
 	if err != nil {
