@@ -22,7 +22,8 @@ var (
 	quiet        bool
 	waitForSub   bool
 	nClients     int
-	clients      []nats.JetStreamContext
+	jsClients    []nats.JetStreamContext
+	clients      []*nats.Conn
 )
 
 func streamName(i int) string {
@@ -31,6 +32,7 @@ func streamName(i int) string {
 
 func subscriber(ctx context.Context, subscribed, done chan struct{}, subject string) {
 	js := getClient()
+	var once sync.Once
 	sub, err := js.Subscribe(subject, func(msg *nats.Msg) {
 		var tm time.Time
 		err := tm.UnmarshalBinary(msg.Data)
@@ -42,8 +44,10 @@ func subscriber(ctx context.Context, subscribed, done chan struct{}, subject str
 			log.Println(subject, "latency", latency)
 		}
 		hist.Add(latency)
-		close(done)
-	}, nats.DeliverNew())
+		once.Do(func() {
+			close(done)
+		})
+	})
 	if err != nil {
 		log.Println("could not subscrive to", subject, err)
 		return
@@ -76,17 +80,19 @@ func deleteStreams() {
 }
 
 func openClients() {
-	clients = make([]nats.JetStreamContext, nClients)
+	jsClients = make([]nats.JetStreamContext, nClients)
+	clients = make([]*nats.Conn, nClients)
 	for i := 0; i < nClients; i++ {
 		nc, err := nats.Connect(natsAddress, nats.Name("deleter"))
 		if err != nil {
 			log.Fatalln(err)
 		}
+		clients[i] = nc
 		js, err := nc.JetStream()
 		if err != nil {
 			log.Fatalln(err)
 		}
-		clients[i] = js
+		jsClients[i] = js
 	}
 }
 
@@ -94,7 +100,14 @@ var clientIDx int64
 
 func getClient() nats.JetStreamContext {
 	idx := atomic.AddInt64(&clientIDx, 1)
-	return clients[int(idx)%len(clients)]
+	return jsClients[int(idx)%len(jsClients)]
+}
+
+func closeClients() {
+	for _, nc := range clients {
+		nc.Drain()
+		nc.Close()
+	}
 }
 
 func main() {
@@ -119,6 +132,7 @@ func main() {
 	}()
 
 	openClients()
+	defer closeClients()
 
 	deleteStreams()
 
@@ -163,6 +177,8 @@ func do(ctx context.Context, wg *sync.WaitGroup, streamName string) {
 		Subjects: []string{streamName},
 		Replicas: replicas,
 		Storage:  nats.FileStorage,
+		MaxAge:   2 * time.Minute,
+		Discard:  nats.DiscardOld,
 	}, nats.Context(ctx))
 	if err != nil {
 		log.Println("failed to create stream", err)
